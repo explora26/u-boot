@@ -31,6 +31,8 @@
 #include <power/pmic.h>
 #include <power/pfuze3000_pmic.h>
 #include <malloc.h>
+#include <usb.h>
+#include <usb/ehci-ci.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -209,6 +211,49 @@ int power_init_board(void)
 }
 #endif
 
+#ifdef CONFIG_USB_EHCI_MX6
+#define USB_OTHERREGS_OFFSET	0x800
+#define UCTRL_PWR_POL		(1 << 9)
+
+static iomux_v3_cfg_t const usb_otg_pads[] = {
+	/* OGT1 */
+	MX6_PAD_GPIO1_IO09__USB_OTG1_PWR | MUX_PAD_CTRL(NO_PAD_CTRL),
+	MX6_PAD_GPIO1_IO10__ANATOP_OTG1_ID | MUX_PAD_CTRL(NO_PAD_CTRL),
+	/* OTG2 */
+	MX6_PAD_GPIO1_IO12__USB_OTG2_PWR | MUX_PAD_CTRL(NO_PAD_CTRL)
+};
+
+static void setup_usb(void)
+{
+	imx_iomux_v3_setup_multiple_pads(usb_otg_pads,
+					 ARRAY_SIZE(usb_otg_pads));
+}
+
+int board_usb_phy_mode(int port)
+{
+	if (port == 1)
+		return USB_INIT_HOST;
+	else
+		return usb_phy_mode(port);
+}
+
+int board_ehci_hcd_init(int port)
+{
+	u32 *usbnc_usb_ctrl;
+
+	if (port > 1)
+		return -EINVAL;
+
+	usbnc_usb_ctrl = (u32 *)(USB_BASE_ADDR + USB_OTHERREGS_OFFSET +
+				 port * 4);
+
+	/* Set Power polarity */
+	setbits_le32(usbnc_usb_ctrl, UCTRL_PWR_POL);
+
+	return 0;
+}
+#endif
+
 static iomux_v3_cfg_t const uart1_pads[] = {
 	MX6_PAD_GPIO1_IO04__UART1_TX | MUX_PAD_CTRL(UART_PAD_CTRL),
 	MX6_PAD_GPIO1_IO05__UART1_RX | MUX_PAD_CTRL(UART_PAD_CTRL),
@@ -351,6 +396,10 @@ int board_init(void)
 
 #ifdef CONFIG_SYS_I2C_MXC
 	setup_i2c(0, CONFIG_SYS_I2C_SPEED, 0x7f, &i2c_pad_info1);
+#endif
+
+#ifdef CONFIG_USB_EHCI_MX6
+	setup_usb();
 #endif
 
 	return 0;
